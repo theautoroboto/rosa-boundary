@@ -75,3 +75,5 @@ adversary-findings.sarif
 *.swo
 *~
 tests/localstack/terraform/localstack.tfvars
+
+.playwright-mcp
