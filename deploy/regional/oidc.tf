@@ -103,6 +103,9 @@ resource "aws_iam_role" "sre_shared" {
           StringEquals = {
             "${local.oidc_provider_domain}:aud" = var.oidc_client_id
           }
+          "ForAnyValue:StringEquals" = {
+            "${local.oidc_provider_domain}:groups" = var.required_groups
+          }
         }
       }],
       var.stage_keycloak_issuer_url != "" ? [{
@@ -118,6 +121,9 @@ resource "aws_iam_role" "sre_shared" {
           StringEquals = {
             "${local.stage_oidc_provider_domain}:aud" = var.stage_oidc_client_id
           }
+          "ForAnyValue:StringEquals" = {
+            "${local.stage_oidc_provider_domain}:groups" = var.required_groups
+          }
         }
       }] : [],
       var.prod_keycloak_issuer_url != "" ? [{
@@ -132,6 +138,9 @@ resource "aws_iam_role" "sre_shared" {
         Condition = {
           StringEquals = {
             "${local.prod_oidc_provider_domain}:aud" = var.prod_oidc_client_id
+          }
+          "ForAnyValue:StringEquals" = {
+            "${local.prod_oidc_provider_domain}:groups" = var.required_groups
           }
         }
       }] : []
