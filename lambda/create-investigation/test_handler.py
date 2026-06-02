@@ -1882,5 +1882,126 @@ class TestTaskTagging:
         assert 'owner_sub' not in tags, "Must not use obsolete 'owner_sub' tag"
 
 
+class TestEfsOwnershipCheck:
+    """EFS access point reuse must verify RootDirectory.Path (H10)."""
+
+    def _make_ap(self, ap_id, path, cluster_id='cls-1', investigation_id='inv-1'):
+        return {
+            'AccessPointId': ap_id,
+            'LifeCycleState': 'available',
+            'RootDirectory': {'Path': path},
+            'Tags': [
+                {'Key': 'ClusterID', 'Value': cluster_id},
+                {'Key': 'InvestigationID', 'Value': investigation_id},
+            ],
+        }
+
+    def test_matching_path_is_returned(self):
+        """Access point with correct path is accepted."""
+        ap = self._make_ap('fsap-good', '/cls-1/inv-1')
+        with patch('handler.efs') as mock_efs:
+            mock_efs.get_paginator.return_value.paginate.return_value = [
+                {'AccessPoints': [ap]}
+            ]
+            result = handler.find_existing_access_point('fs-123', 'cls-1', 'inv-1')
+        assert result is not None
+        assert result['AccessPointId'] == 'fsap-good'
+
+    def test_mismatched_path_is_rejected(self):
+        """Access point whose RootDirectory.Path does not match tags is skipped."""
+        ap = self._make_ap('fsap-bad', '/', 'cls-1', 'inv-1')
+        with patch('handler.efs') as mock_efs:
+            mock_efs.get_paginator.return_value.paginate.return_value = [
+                {'AccessPoints': [ap]}
+            ]
+            result = handler.find_existing_access_point('fs-123', 'cls-1', 'inv-1')
+        assert result is None
+
+    def test_path_traversal_attempt_is_rejected(self):
+        """Access point with path traversal in RootDirectory is rejected."""
+        ap = self._make_ap('fsap-traversal', '/cls-1/inv-1/../../secret', 'cls-1', 'inv-1')
+        with patch('handler.efs') as mock_efs:
+            mock_efs.get_paginator.return_value.paginate.return_value = [
+                {'AccessPoints': [ap]}
+            ]
+            result = handler.find_existing_access_point('fs-123', 'cls-1', 'inv-1')
+        assert result is None
+
+
+class TestMinimumTaskTimeout:
+    """Caller-supplied task_timeout must respect TASK_TIMEOUT_MINIMUM (H5)."""
+
+    def _make_event(self, task_timeout):
+        return {
+            'headers': {'x-oidc-token': 'tok'},
+            'body': json.dumps({
+                'investigation_id': 'inv-1',
+                'cluster_id': 'cls-1',
+                'task_timeout': task_timeout,
+            }),
+        }
+
+    _REQUIRED_ENV = {
+        'KEYCLOAK_URL': 'https://kc.example.com',
+        'KEYCLOAK_REALM': 'test',
+        'KEYCLOAK_CLIENT_ID': 'aws-sre-access',
+        'ECS_CLUSTER': 'test-cluster',
+        'TASK_DEFINITION': 'rosa-boundary',
+        'SUBNETS': 'subnet-1',
+        'SECURITY_GROUP': 'sg-1',
+        'EFS_FILESYSTEM_ID': 'fs-1',
+        'SHARED_ROLE_ARN': 'arn:aws:iam::123:role/sre',
+        'REQUIRED_GROUPS': 'sre-operators',
+    }
+
+    def _call(self, task_timeout, minimum=300):
+        env = {**self._REQUIRED_ENV, 'TASK_TIMEOUT_MINIMUM': str(minimum)}
+        with patch.dict('os.environ', env):
+            handler.TASK_TIMEOUT_MINIMUM = minimum
+            # Reload module-level globals that depend on env vars
+            handler.KEYCLOAK_URL = env['KEYCLOAK_URL']
+            handler.KEYCLOAK_REALM = env['KEYCLOAK_REALM']
+            handler.KEYCLOAK_CLIENT_ID = env['KEYCLOAK_CLIENT_ID']
+            handler.ECS_CLUSTER = env['ECS_CLUSTER']
+            handler.TASK_DEFINITION = env['TASK_DEFINITION']
+            handler.SUBNETS = [env['SUBNETS']]
+            handler.SECURITY_GROUP = env['SECURITY_GROUP']
+            handler.EFS_FILESYSTEM_ID = env['EFS_FILESYSTEM_ID']
+            handler.SHARED_ROLE_ARN = env['SHARED_ROLE_ARN']
+            handler.REQUIRED_GROUPS = ['sre-operators']
+            with patch('handler.validate_oidc_token', return_value=None):
+                return handler.lambda_handler(self._make_event(task_timeout), Mock())
+
+    def test_below_minimum_is_rejected(self):
+        """task_timeout below TASK_TIMEOUT_MINIMUM returns 400."""
+        result = self._call(task_timeout=60, minimum=300)
+        assert result['statusCode'] == 400
+        assert '300' in result['body']
+
+    def test_zero_rejected_when_minimum_set(self):
+        """task_timeout=0 (no deadline) is rejected when minimum > 0."""
+        result = self._call(task_timeout=0, minimum=300)
+        assert result['statusCode'] == 400
+
+    def test_at_minimum_accepted(self):
+        """task_timeout equal to minimum passes validation (reaches auth, not 400)."""
+        result = self._call(task_timeout=300, minimum=300)
+        # Will fail at OIDC validation (401), not timeout validation (400)
+        assert result['statusCode'] == 401
+
+    def test_above_minimum_accepted(self):
+        """task_timeout above minimum passes validation."""
+        result = self._call(task_timeout=3600, minimum=300)
+        assert result['statusCode'] == 401
+
+    def test_minimum_zero_allows_any_nonnegative(self):
+        """When TASK_TIMEOUT_MINIMUM=0, zero and small values are accepted."""
+        result = self._call(task_timeout=0, minimum=0)
+        assert result['statusCode'] == 401
+
+        result = self._call(task_timeout=1, minimum=0)
+        assert result['statusCode'] == 401
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
