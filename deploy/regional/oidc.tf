@@ -199,14 +199,30 @@ resource "aws_iam_role_policy" "sre_shared_ecs_exec" {
         }
       },
       {
-        Sid    = "DescribeAndListECS"
+        # ListTasks operates on the cluster resource, not individual tasks.
+        # ecs:ResourceTag/* conditions evaluate against the acted-on resource,
+        # so task-level ABAC cannot be applied here. The action only returns
+        # ARNs — no sensitive task data — so no condition is needed.
+        Sid    = "ListECSTasks"
         Effect = "Allow"
-        Action = [
-          "ecs:DescribeTasks",
-          "ecs:ListTasks",
-          "ecs:DescribeTaskDefinition"
-        ]
+        Action = ["ecs:ListTasks"]
         Resource = "*"
+      },
+      {
+        # DescribeTasks operates on task resources and supports ecs:ResourceTag/*,
+        # so ABAC scoping is both possible and enforced here.
+        # ecs:DescribeTaskDefinition is intentionally omitted: task definitions
+        # contain Secrets Manager ARNs for cluster kubeconfigs and have no
+        # per-SRE ownership concept, so they cannot be scoped by ABAC.
+        Sid      = "DescribeOwnedECSTasks"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTasks"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "ecs:ResourceTag/${var.abac_tag_key}" = "$${aws:PrincipalTag/${var.abac_tag_key}}"
+          }
+        }
       },
       {
         Sid    = "SSMSessionForECSExec"
