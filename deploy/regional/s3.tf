@@ -1,7 +1,11 @@
-# S3 bucket for audit logs with WORM compliance
+# S3 bucket for audit logs with WORM compliance.
+# object_lock_enabled must be set here at creation time — it cannot be added
+# to an existing bucket. The default retention rule is configured separately
+# in aws_s3_bucket_object_lock_configuration below.
 resource "aws_s3_bucket" "audit" {
-  bucket = local.bucket_name
-  tags   = local.common_tags
+  bucket              = local.bucket_name
+  object_lock_enabled = true
+  tags                = local.common_tags
 }
 
 # Enable versioning (required for object lock)
@@ -13,7 +17,8 @@ resource "aws_s3_bucket_versioning" "audit" {
   }
 }
 
-# Enable object lock with compliance mode (WORM)
+# Default retention rule for Object Lock (COMPLIANCE mode, WORM).
+# Object Lock itself is enabled on the bucket resource above.
 resource "aws_s3_bucket_object_lock_configuration" "audit" {
   bucket = aws_s3_bucket.audit.id
 
@@ -24,8 +29,6 @@ resource "aws_s3_bucket_object_lock_configuration" "audit" {
     }
   }
 
-  # Object lock must be enabled at bucket creation
-  # This will fail if the bucket already exists without object lock
   depends_on = [aws_s3_bucket_versioning.audit]
 }
 
