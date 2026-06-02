@@ -25,8 +25,14 @@ sync_to_s3() {
 
     if [ -n "${S3_AUDIT_ESCROW}" ]; then
         echo "Syncing /home/sre to ${S3_AUDIT_ESCROW}..."
-        aws s3 sync /home/sre "${S3_AUDIT_ESCROW}" --quiet ||
-            echo "Warning: S3 sync failed" >&2
+        # timeout: prevents a hung sync from blocking container shutdown past the ECS stop timeout.
+        # --no-follow-symlinks: uploads symlink metadata only; never uploads symlink targets,
+        #   which could point outside /home/sre and exfiltrate host-level files.
+        timeout "${SYNC_TIMEOUT:-300}" \
+            aws s3 sync /home/sre "${S3_AUDIT_ESCROW}" \
+            --no-follow-symlinks \
+            --quiet ||
+            echo "Warning: S3 sync failed or timed out" >&2
     else
         echo "Warning: S3 audit not configured, /home/sre will not be backed up" >&2
     fi

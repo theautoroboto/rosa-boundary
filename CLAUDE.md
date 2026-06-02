@@ -169,6 +169,7 @@ Architecture values are written to temp files (`/tmp/aws_cli_arch`, `/tmp/oc_suf
 | `CLUSTER_ID` | — | Cluster ID for auto-generated S3 path |
 | `INVESTIGATION_ID` | — | Investigation ID for auto-generated S3 path |
 | `TASK_TIMEOUT` | 3600 | Timeout in seconds (0 = no timeout); **enforced by reaper Lambda, not modifiable from container** |
+| `SYNC_TIMEOUT` | 300 | Max seconds for `aws s3 sync` on exit; prevents hung sync from blocking container shutdown |
 | `CLAUDE_CODE_USE_BEDROCK` | `1` | Enable Claude Code Bedrock mode |
 | `AWS_REGION` | auto-detected | Bedrock region (ECS metadata → fallback `us-east-1`) |
 | `ANTHROPIC_MODEL` | — | Override Claude model ID |
