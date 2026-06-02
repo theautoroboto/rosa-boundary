@@ -878,6 +878,7 @@ class TestSkipTask:
         expected_ap = {
             'AccessPointId': 'fsap-match',
             'LifeCycleState': 'available',
+            'RootDirectory': {'Path': '/test-cluster/test-inv'},
             'Tags': [
                 {'Key': 'ClusterID', 'Value': 'test-cluster'},
                 {'Key': 'InvestigationID', 'Value': 'test-inv'}
@@ -942,6 +943,7 @@ class TestDuplicateInvestigationDetection:
                     {'AccessPoints': [{
                         'AccessPointId': 'fsap-existing',
                         'LifeCycleState': 'available',
+                        'RootDirectory': {'Path': '/c1/inv1'},
                         'Tags': [
                             {'Key': 'ClusterID', 'Value': 'c1'},
                             {'Key': 'InvestigationID', 'Value': 'inv1'}
@@ -1128,6 +1130,7 @@ class TestDuplicateInvestigationDetection:
                         {'AccessPoints': [{
                             'AccessPointId': 'fsap-existing',
                             'LifeCycleState': 'available',
+                            'RootDirectory': {'Path': '/test-cluster/inv-123'},
                             'Tags': [
                                 {'Key': 'ClusterID', 'Value': 'test-cluster'},
                                 {'Key': 'InvestigationID', 'Value': 'inv-123'}
@@ -1523,6 +1526,7 @@ class TestPerInvestigationTaskDef:
                         {'AccessPoints': [{
                             'AccessPointId': 'fsap-existing',
                             'LifeCycleState': 'available',
+                            'RootDirectory': {'Path': '/c1/inv1'},
                             'Tags': [
                                 {'Key': 'ClusterID', 'Value': 'c1'},
                                 {'Key': 'InvestigationID', 'Value': 'inv1'}
