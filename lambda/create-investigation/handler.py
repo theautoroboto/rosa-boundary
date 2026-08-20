@@ -99,7 +99,7 @@ SECURITY_GROUP = os.environ.get('SECURITY_GROUP')
 EFS_FILESYSTEM_ID = os.environ.get('EFS_FILESYSTEM_ID')
 SHARED_ROLE_ARN = os.environ.get('SHARED_ROLE_ARN')
 REQUIRED_GROUPS = [g.strip() for g in os.environ.get('REQUIRED_GROUPS', '').split(',') if g.strip()]
-ABAC_TAG_KEY = os.environ.get('ABAC_TAG_KEY', 'username')
+ABAC_TAG_KEY = os.environ.get('ABAC_TAG_KEY', 'uuid')
 TASK_TIMEOUT_MINIMUM = int(os.environ.get('TASK_TIMEOUT_MINIMUM', '30'))
 STAGE_KEYCLOAK_ISSUER_URL = os.environ.get('STAGE_KEYCLOAK_ISSUER_URL', '').rstrip('/')
 STAGE_OIDC_CLIENT_ID = os.environ.get('STAGE_OIDC_CLIENT_ID', '')
@@ -228,8 +228,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             groups = realm_roles if isinstance(realm_roles, list) else []
 
         # Extract ABAC identifier from the https://aws.amazon.com/tags principal_tags.
-        # The tag key is configurable (ABAC_TAG_KEY env var) to support both dev
-        # (username → preferred_username) and stage (uuid → rhatUUID).
+        # The tag key (ABAC_TAG_KEY env var, default 'uuid') must match what the OIDC
+        # provider emits and what the IAM policy expects. Red Hat EmployeeIDP emits
+        # principal_tags.uuid; dev Keycloak must be configured to emit the same.
         # Guard against non-dict claim shapes that would cause AttributeError at runtime.
         aws_tags = claims.get('https://aws.amazon.com/tags')
         if not isinstance(aws_tags, dict):
@@ -243,17 +244,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         elif not isinstance(abac_values, list):
             abac_values = []
 
-        if abac_values:
-            abac_tag_value = abac_values[0]
-        elif ABAC_TAG_KEY != 'username':
-            # Non-default ABAC key configured but not present in token — fail fast rather
-            # than silently falling back to username, which would produce a task whose ABAC
-            # tag can't be matched by the shared SRE role's PrincipalTag condition.
+        if not abac_values:
+            # ABAC tag is required for all environments. If missing, fail fast rather
+            # than creating a task whose ABAC tag can't be matched by the shared SRE
+            # role's PrincipalTag condition.
             logger.warning(f"ABAC tag key '{ABAC_TAG_KEY}' not found in principal_tags for user {username}")
             return response(403, {'error': f'Missing required ABAC claim: {ABAC_TAG_KEY}'})
-        else:
-            abac_tag_value = username
 
+        abac_tag_value = abac_values[0]
         logger.info(f"Token validated (ABAC tag key: {ABAC_TAG_KEY})")
 
         # Check group membership (user must be in at least one of the required groups)
