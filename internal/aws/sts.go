@@ -16,6 +16,11 @@ type TemporaryCredentials struct {
 	SessionToken    string
 }
 
+// STSClient interface for testing STS operations.
+type STSClient interface {
+	AssumeRoleWithWebIdentity(ctx context.Context, params *sts.AssumeRoleWithWebIdentityInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleWithWebIdentityOutput, error)
+}
+
 // AssumeRoleWithWebIdentity calls STS to exchange an OIDC token for temporary AWS credentials.
 // This is a public STS operation — no ambient credentials are required.
 //
@@ -31,7 +36,11 @@ func AssumeRoleWithWebIdentity(ctx context.Context, region, roleARN, idToken, se
 		Region:      region,
 		Credentials: aws.AnonymousCredentials{},
 	})
+	return assumeRoleWithWebIdentityWithClient(ctx, client, roleARN, idToken, sessionName)
+}
 
+// assumeRoleWithWebIdentityWithClient is the testable internal implementation.
+func assumeRoleWithWebIdentityWithClient(ctx context.Context, client STSClient, roleARN, idToken, sessionName string) (*TemporaryCredentials, error) {
 	out, err := client.AssumeRoleWithWebIdentity(ctx, &sts.AssumeRoleWithWebIdentityInput{
 		RoleArn:          aws.String(roleARN),
 		RoleSessionName:  aws.String(sessionName),

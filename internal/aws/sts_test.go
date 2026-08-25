@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts/types"
 )
 
-// mockSTSClient implements the STS API interface for testing
+// mockSTSClient implements the STSClient interface for testing
 type mockSTSClient struct {
 	assumeRoleFunc func(ctx context.Context, params *sts.AssumeRoleWithWebIdentityInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleWithWebIdentityOutput, error)
 }
@@ -22,26 +22,222 @@ func (m *mockSTSClient) AssumeRoleWithWebIdentity(ctx context.Context, params *s
 	return nil, errors.New("not implemented")
 }
 
-func TestAssumeRoleWithWebIdentity_Success(t *testing.T) {
-	// Note: This is an integration-style test that would require mocking the STS client.
-	// The current implementation creates its own STS client internally, so we can't inject a mock.
-	// This test documents the expected behavior and validates the struct/function signatures.
+func TestAssumeRoleWithWebIdentityWithClient_Success(t *testing.T) {
+	ctx := context.Background()
+	roleARN := "arn:aws:iam::123456789012:role/test-role"
+	idToken := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+	sessionName := "rosa-boundary-test"
 
-	creds := &TemporaryCredentials{
-		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
-		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		SessionToken:    "AQoEXAMPLEH4aoAH0gNCAPyJxz4BlCFFxWNE1OPTgk5TthT+FvwqnKwRcOIfrRh3c/LTo6UDdyJwOOvEVPvLXCrrrUtdnniCEXAMPLE/IvU1dYUg2RVAJBanLiHb4IgRmpRV3zrkuWJOgQs8IZZaIv2BXIa2R4OlgkBN9bkUDNCJiBeb/AXlzBBko7b15fjrBs2+cTQtpZ3CYWFXG8C5zqx37wnOE49mRl/+OtkIKGO7fAE",
+	mockClient := &mockSTSClient{
+		assumeRoleFunc: func(ctx context.Context, params *sts.AssumeRoleWithWebIdentityInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleWithWebIdentityOutput, error) {
+			// Verify input parameters
+			if aws.ToString(params.RoleArn) != roleARN {
+				t.Errorf("RoleArn = %q, want %q", aws.ToString(params.RoleArn), roleARN)
+			}
+			if aws.ToString(params.RoleSessionName) != sessionName {
+				t.Errorf("RoleSessionName = %q, want %q", aws.ToString(params.RoleSessionName), sessionName)
+			}
+			if aws.ToString(params.WebIdentityToken) != idToken {
+				t.Errorf("WebIdentityToken = %q, want %q", aws.ToString(params.WebIdentityToken), idToken)
+			}
+
+			// Return valid credentials
+			return &sts.AssumeRoleWithWebIdentityOutput{
+				Credentials: &types.Credentials{
+					AccessKeyId:     aws.String("AKIAIOSFODNN7EXAMPLE"),
+					SecretAccessKey: aws.String("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
+					SessionToken:    aws.String("AQoEXAMPLEH4aoAH0gNCAPyJxz4BlCFFxWNE1OPTgk5TthT+FvwqnKwRcOIfrRh3c/L"),
+				},
+			}, nil
+		},
 	}
 
-	// Validate structure
-	if creds.AccessKeyID == "" {
-		t.Error("AccessKeyID should not be empty")
+	creds, err := assumeRoleWithWebIdentityWithClient(ctx, mockClient, roleARN, idToken, sessionName)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
 	}
-	if creds.SecretAccessKey == "" {
-		t.Error("SecretAccessKey should not be empty")
+
+	if creds == nil {
+		t.Fatal("Expected credentials, got nil")
 	}
-	if creds.SessionToken == "" {
-		t.Error("SessionToken should not be empty")
+
+	if creds.AccessKeyID != "AKIAIOSFODNN7EXAMPLE" {
+		t.Errorf("AccessKeyID = %q, want %q", creds.AccessKeyID, "AKIAIOSFODNN7EXAMPLE")
+	}
+	if creds.SecretAccessKey != "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" {
+		t.Errorf("SecretAccessKey = %q, want %q", creds.SecretAccessKey, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+	}
+	if creds.SessionToken != "AQoEXAMPLEH4aoAH0gNCAPyJxz4BlCFFxWNE1OPTgk5TthT+FvwqnKwRcOIfrRh3c/L" {
+		t.Errorf("SessionToken = %q, want %q", creds.SessionToken, "AQoEXAMPLEH4aoAH0gNCAPyJxz4BlCFFxWNE1OPTgk5TthT+FvwqnKwRcOIfrRh3c/L")
+	}
+}
+
+func TestAssumeRoleWithWebIdentityWithClient_APIError(t *testing.T) {
+	ctx := context.Background()
+	roleARN := "arn:aws:iam::123456789012:role/test-role"
+	idToken := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+	sessionName := "rosa-boundary-test"
+
+	tests := []struct {
+		name      string
+		mockError error
+		wantError string
+	}{
+		{
+			name:      "network error",
+			mockError: errors.New("network timeout"),
+			wantError: "AssumeRoleWithWebIdentity failed: network timeout",
+		},
+		{
+			name:      "invalid token error",
+			mockError: errors.New("InvalidIdentityToken: Token is expired"),
+			wantError: "AssumeRoleWithWebIdentity failed: InvalidIdentityToken: Token is expired",
+		},
+		{
+			name:      "access denied",
+			mockError: errors.New("AccessDenied: Not authorized to perform sts:AssumeRoleWithWebIdentity"),
+			wantError: "AssumeRoleWithWebIdentity failed: AccessDenied: Not authorized to perform sts:AssumeRoleWithWebIdentity",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockClient := &mockSTSClient{
+				assumeRoleFunc: func(ctx context.Context, params *sts.AssumeRoleWithWebIdentityInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleWithWebIdentityOutput, error) {
+					return nil, tt.mockError
+				},
+			}
+
+			creds, err := assumeRoleWithWebIdentityWithClient(ctx, mockClient, roleARN, idToken, sessionName)
+			if err == nil {
+				t.Fatal("Expected error, got nil")
+			}
+			if err.Error() != tt.wantError {
+				t.Errorf("Error = %q, want %q", err.Error(), tt.wantError)
+			}
+			if creds != nil {
+				t.Errorf("Expected nil credentials on error, got %+v", creds)
+			}
+		})
+	}
+}
+
+func TestAssumeRoleWithWebIdentityWithClient_NilCredentials(t *testing.T) {
+	ctx := context.Background()
+	roleARN := "arn:aws:iam::123456789012:role/test-role"
+	idToken := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+	sessionName := "rosa-boundary-test"
+
+	mockClient := &mockSTSClient{
+		assumeRoleFunc: func(ctx context.Context, params *sts.AssumeRoleWithWebIdentityInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleWithWebIdentityOutput, error) {
+			// STS returns success but with nil Credentials
+			return &sts.AssumeRoleWithWebIdentityOutput{
+				Credentials: nil,
+			}, nil
+		},
+	}
+
+	creds, err := assumeRoleWithWebIdentityWithClient(ctx, mockClient, roleARN, idToken, sessionName)
+	if err == nil {
+		t.Fatal("Expected error for nil credentials, got nil")
+	}
+	if err.Error() != "STS returned nil credentials" {
+		t.Errorf("Error = %q, want %q", err.Error(), "STS returned nil credentials")
+	}
+	if creds != nil {
+		t.Errorf("Expected nil credentials, got %+v", creds)
+	}
+}
+
+func TestAssumeRoleWithWebIdentityWithClient_EmptyCredentialFields(t *testing.T) {
+	ctx := context.Background()
+	roleARN := "arn:aws:iam::123456789012:role/test-role"
+	idToken := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+	sessionName := "rosa-boundary-test"
+
+	tests := []struct {
+		name        string
+		credentials *types.Credentials
+	}{
+		{
+			name: "empty AccessKeyId",
+			credentials: &types.Credentials{
+				AccessKeyId:     aws.String(""),
+				SecretAccessKey: aws.String("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
+				SessionToken:    aws.String("token123"),
+			},
+		},
+		{
+			name: "nil AccessKeyId pointer",
+			credentials: &types.Credentials{
+				AccessKeyId:     nil,
+				SecretAccessKey: aws.String("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
+				SessionToken:    aws.String("token123"),
+			},
+		},
+		{
+			name: "empty SecretAccessKey",
+			credentials: &types.Credentials{
+				AccessKeyId:     aws.String("AKIAIOSFODNN7EXAMPLE"),
+				SecretAccessKey: aws.String(""),
+				SessionToken:    aws.String("token123"),
+			},
+		},
+		{
+			name: "nil SecretAccessKey pointer",
+			credentials: &types.Credentials{
+				AccessKeyId:     aws.String("AKIAIOSFODNN7EXAMPLE"),
+				SecretAccessKey: nil,
+				SessionToken:    aws.String("token123"),
+			},
+		},
+		{
+			name: "empty SessionToken",
+			credentials: &types.Credentials{
+				AccessKeyId:     aws.String("AKIAIOSFODNN7EXAMPLE"),
+				SecretAccessKey: aws.String("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
+				SessionToken:    aws.String(""),
+			},
+		},
+		{
+			name: "nil SessionToken pointer",
+			credentials: &types.Credentials{
+				AccessKeyId:     aws.String("AKIAIOSFODNN7EXAMPLE"),
+				SecretAccessKey: aws.String("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
+				SessionToken:    nil,
+			},
+		},
+		{
+			name: "all empty",
+			credentials: &types.Credentials{
+				AccessKeyId:     aws.String(""),
+				SecretAccessKey: aws.String(""),
+				SessionToken:    aws.String(""),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockClient := &mockSTSClient{
+				assumeRoleFunc: func(ctx context.Context, params *sts.AssumeRoleWithWebIdentityInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleWithWebIdentityOutput, error) {
+					return &sts.AssumeRoleWithWebIdentityOutput{
+						Credentials: tt.credentials,
+					}, nil
+				},
+			}
+
+			creds, err := assumeRoleWithWebIdentityWithClient(ctx, mockClient, roleARN, idToken, sessionName)
+			if err == nil {
+				t.Fatal("Expected error for empty credential fields, got nil")
+			}
+			if err.Error() != "STS returned credentials with empty values" {
+				t.Errorf("Error = %q, want %q", err.Error(), "STS returned credentials with empty values")
+			}
+			if creds != nil {
+				t.Errorf("Expected nil credentials, got %+v", creds)
+			}
+		})
 	}
 }
 
@@ -75,199 +271,6 @@ func TestStaticCredentialsProvider(t *testing.T) {
 	}
 }
 
-func TestTemporaryCredentials_Structure(t *testing.T) {
-	// Test that TemporaryCredentials struct can be created and accessed
-	creds := TemporaryCredentials{
-		AccessKeyID:     "test-key-id",
-		SecretAccessKey: "test-secret",
-		SessionToken:    "test-token",
-	}
-
-	if creds.AccessKeyID != "test-key-id" {
-		t.Errorf("AccessKeyID = %q, want %q", creds.AccessKeyID, "test-key-id")
-	}
-	if creds.SecretAccessKey != "test-secret" {
-		t.Errorf("SecretAccessKey = %q, want %q", creds.SecretAccessKey, "test-secret")
-	}
-	if creds.SessionToken != "test-token" {
-		t.Errorf("SessionToken = %q, want %q", creds.SessionToken, "test-token")
-	}
-}
-
-// TestCredentialValidation documents the validation logic in AssumeRoleWithWebIdentity
-func TestCredentialValidation(t *testing.T) {
-	tests := []struct {
-		name        string
-		credentials *types.Credentials
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "valid credentials",
-			credentials: &types.Credentials{
-				AccessKeyId:     aws.String("AKIAIOSFODNN7EXAMPLE"),
-				SecretAccessKey: aws.String("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
-				SessionToken:    aws.String("token123"),
-			},
-			wantErr: false,
-		},
-		{
-			name:        "nil credentials struct",
-			credentials: nil,
-			wantErr:     true,
-			errContains: "nil credentials",
-		},
-		{
-			name: "empty AccessKeyID",
-			credentials: &types.Credentials{
-				AccessKeyId:     aws.String(""),
-				SecretAccessKey: aws.String("secret"),
-				SessionToken:    aws.String("token"),
-			},
-			wantErr:     true,
-			errContains: "empty values",
-		},
-		{
-			name: "empty SecretAccessKey",
-			credentials: &types.Credentials{
-				AccessKeyId:     aws.String("AKIAIOSFODNN7EXAMPLE"),
-				SecretAccessKey: aws.String(""),
-				SessionToken:    aws.String("token"),
-			},
-			wantErr:     true,
-			errContains: "empty values",
-		},
-		{
-			name: "empty SessionToken",
-			credentials: &types.Credentials{
-				AccessKeyId:     aws.String("AKIAIOSFODNN7EXAMPLE"),
-				SecretAccessKey: aws.String("secret"),
-				SessionToken:    aws.String(""),
-			},
-			wantErr:     true,
-			errContains: "empty values",
-		},
-		{
-			name: "nil AccessKeyId pointer",
-			credentials: &types.Credentials{
-				AccessKeyId:     nil, // aws.ToString converts nil to ""
-				SecretAccessKey: aws.String("secret"),
-				SessionToken:    aws.String("token"),
-			},
-			wantErr:     true,
-			errContains: "empty values",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Simulate the validation logic from AssumeRoleWithWebIdentity
-			if tt.credentials == nil {
-				if !tt.wantErr {
-					t.Error("Expected no error, but credentials are nil")
-				}
-				return
-			}
-
-			accessKeyID := aws.ToString(tt.credentials.AccessKeyId)
-			secretAccessKey := aws.ToString(tt.credentials.SecretAccessKey)
-			sessionToken := aws.ToString(tt.credentials.SessionToken)
-
-			hasEmptyValue := accessKeyID == "" || secretAccessKey == "" || sessionToken == ""
-
-			if tt.wantErr && !hasEmptyValue {
-				t.Error("Expected empty value to be detected, but all values are non-empty")
-			}
-			if !tt.wantErr && hasEmptyValue {
-				t.Error("Expected no empty values, but found empty value")
-			}
-		})
-	}
-}
-
-func TestAssumeRoleWithWebIdentity_InputValidation(t *testing.T) {
-	// Test that input parameters are properly used
-	// This is a documentation test since we can't easily mock the STS client
-
-	ctx := context.Background()
-	region := "us-east-1"
-	roleARN := "arn:aws:iam::123456789012:role/test-role"
-	idToken := "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-	sessionName := "rosa-boundary-test"
-
-	// Validate input parameter types and structure
-	if ctx == nil {
-		t.Error("Context should not be nil")
-	}
-	if region == "" {
-		t.Error("Region should not be empty")
-	}
-	if roleARN == "" {
-		t.Error("RoleARN should not be empty")
-	}
-	if idToken == "" {
-		t.Error("IDToken should not be empty")
-	}
-	if sessionName == "" {
-		t.Error("SessionName should not be empty")
-	}
-
-	// Validate ARN format (basic check)
-	if len(roleARN) < 20 || roleARN[:13] != "arn:aws:iam::" {
-		t.Errorf("RoleARN has unexpected format: %s", roleARN)
-	}
-}
-
-// TestAssumeRoleWithWebIdentity_ErrorCases documents error scenarios
-// Note: Full testing would require mocking the STS client or integration tests
-func TestAssumeRoleWithWebIdentity_ErrorCases(t *testing.T) {
-	errorCases := []struct {
-		name        string
-		description string
-		errorType   string
-	}{
-		{
-			name:        "network error",
-			description: "STS API call fails due to network issue",
-			errorType:   "AssumeRoleWithWebIdentity failed",
-		},
-		{
-			name:        "invalid token",
-			description: "OIDC token is expired or malformed",
-			errorType:   "AssumeRoleWithWebIdentity failed",
-		},
-		{
-			name:        "invalid role ARN",
-			description: "Role does not exist or cannot be assumed",
-			errorType:   "AssumeRoleWithWebIdentity failed",
-		},
-		{
-			name:        "nil credentials response",
-			description: "STS returns success but credentials are nil",
-			errorType:   "STS returned nil credentials",
-		},
-		{
-			name:        "empty credential fields",
-			description: "STS returns credentials with empty string fields",
-			errorType:   "STS returned credentials with empty values",
-		},
-	}
-
-	for _, tc := range errorCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Document the error case
-			t.Logf("Error case: %s - %s", tc.name, tc.description)
-			t.Logf("Expected error type: %s", tc.errorType)
-
-			// To fully test this, we would need to:
-			// 1. Create an interface for the STS client
-			// 2. Inject the client into AssumeRoleWithWebIdentity
-			// 3. Mock the client to return specific error scenarios
-		})
-	}
-}
-
-// TestStaticCredentialsProvider_EmptyFields tests that AWS SDK rejects empty credentials
 func TestStaticCredentialsProvider_EmptyFields(t *testing.T) {
 	creds := &TemporaryCredentials{
 		AccessKeyID:     "",

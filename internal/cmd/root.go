@@ -49,6 +49,14 @@ on AWS Fargate with OIDC-authenticated access control.`,
 	SilenceUsage:  true,
 }
 
+// Function variables for testing
+var (
+	getTokenFunc   = auth.GetToken
+	assumeRoleFunc = awsclient.AssumeRoleWithWebIdentity
+	clearTokenFunc = auth.ClearToken
+	configLoadFunc = config.Load
+)
+
 // Execute runs the root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
@@ -88,7 +96,7 @@ func init() {
 }
 
 func initConfig() {
-	if err := config.Load(); err != nil {
+	if err := configLoadFunc(); err != nil {
 		fmt.Fprintln(os.Stderr, "Warning: config error:", err)
 	}
 }
@@ -135,13 +143,13 @@ func authenticateIfNeeded(cmd *cobra.Command, args []string) error {
 	}
 
 	// First attempt: use cached token if available (unless --force-login)
-	idToken, err := auth.GetToken(cmd.Context(), pkce, forceLogin)
+	idToken, err := getTokenFunc(cmd.Context(), pkce, forceLogin)
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
 	sessionName := "rosa-boundary-session"
-	creds, err := awsclient.AssumeRoleWithWebIdentity(
+	creds, err := assumeRoleFunc(
 		cmd.Context(),
 		cfg.AWSRegion,
 		cfg.SRERoleARN,
@@ -152,16 +160,16 @@ func authenticateIfNeeded(cmd *cobra.Command, args []string) error {
 	// Auto-retry once if we got an auth error (token expired server-side)
 	if err != nil && isAuthError(err) && !forceLogin {
 		debugf("Auth failed with cached token, retrying with fresh login")
-		if clearErr := auth.ClearToken(); clearErr != nil {
+		if clearErr := clearTokenFunc(); clearErr != nil {
 			debugf("Failed to clear token cache: %v", clearErr)
 		}
 
-		idToken, err = auth.GetToken(cmd.Context(), pkce, true)
+		idToken, err = getTokenFunc(cmd.Context(), pkce, true)
 		if err != nil {
 			return fmt.Errorf("authentication failed on retry: %w", err)
 		}
 
-		creds, err = awsclient.AssumeRoleWithWebIdentity(
+		creds, err = assumeRoleFunc(
 			cmd.Context(),
 			cfg.AWSRegion,
 			cfg.SRERoleARN,
