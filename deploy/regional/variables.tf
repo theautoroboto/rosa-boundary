@@ -343,6 +343,12 @@ variable "audit_replication_account_id" {
   # supported in Terraform variable blocks; enforced at the resource level instead.
 }
 
+variable "create_audit_reader_policy" {
+  description = "Create a managed IAM policy granting read-only access to audit data (CloudWatch Logs, S3 audit bucket, CloudTrail). Attach the policy to an IAM group or role for audit retrieval. Initially for all SREs; can be restricted later for embargo'd investigations."
+  type        = bool
+  default     = false
+}
+
 # tflint-ignore: terraform_unused_declarations
 variable "_deletion_approvals" {
   description = "Time-limited deletion approvals for the rosa-deletion-protection OPA policy. Each entry must specify the full Terraform resource address and an RFC 3339 expiration timestamp. The reason field is not evaluated by the policy but serves as inline documentation."

@@ -19,6 +19,7 @@ The ROSA Boundary system provides secure, audited access to ephemeral SRE contai
 
 - [**Keycloak Realm Setup**](configuration/keycloak-realm-setup.md) - Configure Keycloak realm and OIDC client using KeycloakRealmImport CR
 - [**AWS IAM Policies**](configuration/aws-iam-policies.md) - IAM roles and policies for ECS Exec access
+- [**Audit Access**](configuration/audit-access.md) - Configure IAM access for audit data retrieval (CloudWatch Logs, S3, CloudTrail)
 - [**Bedrock Model Agreements**](configuration/bedrock-model-agreements.md) - Account-level subscription manifest and lifecycle
 - [**Code Coverage**](configuration/code-coverage.md) - Codecov integration, Prow CI jobs, and coverage reporting
 - [**UUID Allowlist**](configuration/uuid-allowlist.md) - Interim access control restricting role assumption by user UUID
@@ -31,6 +32,7 @@ The ROSA Boundary system provides secure, audited access to ephemeral SRE contai
 
 - [**User Access Guide**](runbooks/user-access-guide.md) - Step-by-step guide for end users
 - [**Investigation Workflow**](runbooks/investigation-workflow.md) - Creating and managing investigations
+- [**Audit Retrieval**](runbooks/audit-retrieval.md) - Retrieving audit data from CloudWatch, S3, and CloudTrail
 - [**Troubleshooting**](runbooks/troubleshooting.md) - Common issues and solutions
 
 ## Development
