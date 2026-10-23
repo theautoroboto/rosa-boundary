@@ -17,3 +17,9 @@ resource "aws_iam_role_policy_attachment" "reap_investigations_lambda_vpc" {
   role       = aws_iam_role.reap_investigations_lambda.name
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
+
+# VPC execution permissions (required for VPC-attached Lambda in all regions)
+resource "aws_iam_role_policy_attachment" "reap_investigations_lambda_vpc" {
+  role       = aws_iam_role.reap_investigations_lambda.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
